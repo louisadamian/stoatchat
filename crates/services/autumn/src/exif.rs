@@ -36,7 +36,7 @@ pub async fn strip_metadata(
             //     todo!()
             // }
             // Apply orientation manually & strip all other EXIF data
-            "image/jpeg" | "image/png" | "image/avif" | "image/tiff" => {
+            "image/jpeg" | "image/png" | "image/tiff" => {
                 // Create a reader
                 let mut cursor = Cursor::new(buf);
 
@@ -94,6 +94,51 @@ pub async fn strip_metadata(
                 };
 
                 Ok((bytes, Metadata::Image { width, height }))
+            }
+            "image/avif" => {
+                let mut cursor = Cursor::new(buf);
+                // Extract orientation data
+                let exif_reader = Reader::new();
+                let rotation = match exif_reader.read_from_container(&mut cursor) {
+                    Ok(exif) => match exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
+                        Some(orientation) => orientation.value.get_uint(0).unwrap_or_default(),
+                        _ => 0,
+                    },
+                    _ => 0,
+                };
+                let (width, height) = match &rotation {
+                    2 | 4 | 5 | 7 => (*height, *width),
+                    _ => (*width, *height),
+                };
+                let mut out_file = report_internal_error!(NamedTempFile::new())?;
+                report_internal_error!(
+                    Command::new("ffmpeg")
+                        .args([
+                            // Overwrite the temporary file
+                            "-y",
+                            // Read original uploaded file
+                            "-i",
+                            file.path().to_str().ok_or(create_error!(InternalError))?,
+                            // Strip any metadata
+                            "-map_metadata",
+                            "-1",
+                            // Copy video / audio data to new file
+                            "-vf",
+                            format!("transpose={}", rotation).as_str(),
+                            // Save to new temporary file
+                            "-f",
+                            "avif",
+                            out_file
+                                .path()
+                                .to_str()
+                                .ok_or(create_error!(InternalError))?,
+                        ])
+                        .output()
+                        .await
+                )?;
+                let mut buf = Vec::<u8>::new();
+                report_internal_error!(out_file.read_to_end(&mut buf))?;
+                Ok((buf, Metadata::Image { width, height }))
             }
             // JXLs store EXIF data but we don't have the ability to write them
             "image/jxl" => Ok((buf, metadata)),
