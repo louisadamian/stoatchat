@@ -114,18 +114,14 @@ pub async fn strip_metadata(
                 report_internal_error!(
                     Command::new("ffmpeg")
                         .args([
-                            // Overwrite the temporary file
                             "-y",
-                            // Read original uploaded file
                             "-i",
                             file.path().to_str().ok_or(create_error!(InternalError))?,
                             // Strip any metadata
                             "-map_metadata",
                             "-1",
-                            // Copy video / audio data to new file
-                            "-vf",
+                            "-vf", // apply rotation metadata
                             format!("transpose={}", rotation).as_str(),
-                            // Save to new temporary file
                             "-f",
                             "avif",
                             out_file

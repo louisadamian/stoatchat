@@ -1,5 +1,6 @@
+use std::error::Error;
 use std::io::{BufRead, Read, Seek, Write};
-
+use std::path::PathBuf;
 use aes_gcm::{
     aead::{AeadCore, AeadMutInPlace, OsRng},
     Aes256Gcm, Key, KeyInit, Nonce,
@@ -16,6 +17,7 @@ use aws_sdk_s3::{
 use base64::prelude::*;
 use tempfile::NamedTempFile;
 use tiny_skia::Pixmap;
+use std::process::Command;
 
 /// Size of the authentication tag in the buffer
 pub const AUTHENTICATION_TAG_SIZE_BYTES: usize = 16;
@@ -275,6 +277,7 @@ pub async fn create_thumbnail(image: DynamicImage, tag: &str) -> Vec<u8> {
     // Load configuration
     let config = config().await;
     let [w, h] = config.files.preview.get(tag).unwrap();
+    print!("w = {}, h = {}", w, h);
 
     // Create thumbnail
     //.resize(width as u32, height as u32, image::imageops::FilterType::Gaussian)
@@ -290,4 +293,33 @@ pub async fn create_thumbnail(image: DynamicImage, tag: &str) -> Vec<u8> {
     } else {
         encoder.encode_lossless().to_vec()
     }
+}
+
+pub async fn create_thumbnail_avif(path: PathBuf, tag: &str)-> Result<(), Box<dyn Error>>{
+    let image = image::ImageReader::open(path.clone())?.decode()?;
+    let config = config().await;
+    let [w, h] = config.files.preview.get(tag).unwrap();
+    let mut w_scale:i64 = image.width().min(*w as u32).into();
+    let mut h_scale:i64 = image.height().min(*h as u32).into();
+    if(h>w){
+        w_scale=-1;
+    }
+    else{
+        h_scale=-1;
+    }
+    report_internal_error!(
+                    Command::new("ffmpeg")
+                        .args([
+                            "-y",
+                            "-i",
+                            path.to_str().unwrap(),
+                            "-vf",
+                            format!("scale={:}:{:}", w_scale, h_scale).as_str(),
+                            "-f",
+                            "webp",
+                            "",
+                        ])
+                        .output()
+                )?;
+    Ok(())
 }
