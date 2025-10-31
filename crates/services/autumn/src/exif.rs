@@ -111,27 +111,49 @@ pub async fn strip_metadata(
                     _ => (*width, *height),
                 };
                 let mut out_file = report_internal_error!(NamedTempFile::new())?;
-                report_internal_error!(
-                    Command::new("ffmpeg")
-                        .args([
-                            "-y",
-                            "-i",
-                            file.path().to_str().ok_or(create_error!(InternalError))?,
-                            // Strip any metadata
-                            "-map_metadata",
-                            "-1",
-                            "-vf", // apply rotation metadata
-                            format!("transpose={}", rotation).as_str(),
-                            "-f",
-                            "avif",
-                            out_file
-                                .path()
-                                .to_str()
-                                .ok_or(create_error!(InternalError))?,
-                        ])
-                        .output()
-                        .await
-                )?;
+                if rotation != 0 {
+                    report_internal_error!(
+                        Command::new("ffmpeg")
+                            .args([
+                                "-y",
+                                "-i",
+                                file.path().to_str().ok_or(create_error!(InternalError))?,
+                                // Strip any metadata
+                                "-map_metadata",
+                                "-1",
+                                "-vf", // apply rotation metadata
+                                format!("transpose={}", rotation).as_str(),
+                                "-f",
+                                "apng",
+                                out_file
+                                    .path()
+                                    .to_str()
+                                    .ok_or(create_error!(InternalError))?,
+                            ])
+                            .output()
+                            .await
+                    )?;
+                } else {
+                    report_internal_error!(
+                        Command::new("ffmpeg")
+                            .args([
+                                "-y",
+                                "-i",
+                                file.path().to_str().ok_or(create_error!(InternalError))?,
+                                // Strip any metadata
+                                "-map_metadata",
+                                "-1",
+                                "-f",
+                                "apng",
+                                out_file
+                                    .path()
+                                    .to_str()
+                                    .ok_or(create_error!(InternalError))?,
+                            ])
+                            .output()
+                            .await
+                    )?;
+                }
                 let mut buf = Vec::<u8>::new();
                 report_internal_error!(out_file.read_to_end(&mut buf))?;
                 Ok((buf, Metadata::Image { width, height }))
